@@ -2,6 +2,9 @@
 
 This Blender add-on generates procedural Perlin noise and turbulence textures, which can be used for creating materials, textures, or other visual effects. The generated textures can be directly applied to the active material or saved as images.
 
+# Important
+Use powers of 2 in **scale** and **image size** to get tilable texture
+
 ## Features
 
 - **Perlin Noise Generation**: Create seamless Perlin noise textures with customizable dimensions, scale, and seed.

@@ -1,5 +1,3 @@
-# Noise Generator Add-on for Blender
-
 This Blender add-on generates procedural Perlin noise and turbulence textures, which can be used for creating materials, textures, or other visual effects. The generated textures can be directly applied to the active material or saved as images.
 
 # Important
@@ -41,6 +39,8 @@ Use powers of 2 in **scale** and **image size** to get tilable texture
    - **Alpha**: Generate an alpha channel for the texture.
    - **Groovy**: Use absolute values for higher contrast.
 4. Click the `Generate Perlin Noise` button to create the texture.
+
+![image](https://github.com/user-attachments/assets/7676f5fc-9d64-4566-88e9-0c69796be543)
 
 ### Adding Noise to Shader
 

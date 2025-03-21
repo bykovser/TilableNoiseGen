@@ -46,7 +46,7 @@ Use powers of 2 in **scale** and **image size** to get tilable texture
 
 1. After generating a texture, select an object with a material in the 3D Viewport.
 2. In the `Noise Tools` panel, click the `Add to Active Shader` button.
-3. The generated texture will be connected to the active material's shader nodes.
+3. The generated texture will be connected to the active node.
 
 ## Parameters
 
@@ -66,12 +66,6 @@ Use powers of 2 in **scale** and **image size** to get tilable texture
 - **Alpha**: Generate an alpha channel for the texture.
 - **Groovy**: Use absolute values for higher contrast.
 
-## Example Use Cases
-
-- **Procedural Textures**: Create seamless textures for materials like clouds, marble, or wood.
-- **Displacement Maps**: Generate height maps for displacement in shaders.
-- **Backgrounds**: Use noise textures as dynamic backgrounds in animations.
-
 ## Notes
 
 - The generated textures are saved as packed data within the Blender file. To save them externally, use the `Image > Save As` option in the Image Editor.
@@ -84,3 +78,9 @@ This add-on is provided under the MIT License. Feel free to modify and distribut
 ---
 
 For questions or feedback, please open an issue on the repository or contact the developer directly. Enjoy creating procedural textures with Blender!
+
+## Changelog
+
+- **v1.5**: `Add to Active Shader` button connects image texture to active node in shader editor 
+- **v0 - v1.4**: it was born
+ 

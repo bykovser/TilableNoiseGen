@@ -2,6 +2,7 @@ This Blender add-on generates procedural Perlin noise and turbulence textures, w
 
 # Important
 Use powers of 2 in **scale** and **image size** to get tilable texture
+
 2 4 8 16 32 64 128 256 512 1024 2048 4096 8192 16384
 
 ## Features

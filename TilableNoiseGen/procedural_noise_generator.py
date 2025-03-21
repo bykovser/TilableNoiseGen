@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Tilable NoiseGen",
     "author": "BykovSer",
-    "version": (1, 5),
+    "version": (1, 6),
     "blender": (4, 3, 0),
     "location": "Image Editor > N Panel > Noise Tools",
     "description": "Generates procedural noise patterns and connects to shaders",
@@ -10,6 +10,7 @@ bl_info = {
 
 import bpy
 import math
+import numpy as np
 from bpy.types import Operator, Panel
 from bpy.props import IntProperty, FloatProperty, BoolProperty, StringProperty
 
@@ -42,22 +43,16 @@ class Random:
 # Perlin Noise Sampler
 class PerlinSampler2D:
     def __init__(self, width, height, randseed):
-        self.width = width
-        self.height = height
+        self.width = int(width)
+        self.height = int(height)
         self.randseed = randseed
-        self.gradients = [0.0] * (width * height * 2)
         
         rand = Random()
         rand.set_seed(randseed)
-        for i in range(0, len(self.gradients), 2):
-            angle = rand.next() * math.pi * 2
-            self.gradients[i] = math.sin(angle)
-            self.gradients[i + 1] = math.cos(angle)
-    
-    def dot(self, cell_x, cell_y, vx, vy):
-        offset = (cell_x + cell_y * self.width) * 2
-        return self.gradients[offset] * vx + self.gradients[offset + 1] * vy
-    
+        angles = np.array([rand.next() * math.pi * 2 for _ in range(width * height)])
+        self.gradients = np.column_stack([np.sin(angles), np.cos(angles)]).astype(np.float32)
+
+    # ADD THESE STATIC METHODS
     @staticmethod
     def lerp(a, b, t):
         return a + t * (b - a)
@@ -65,76 +60,36 @@ class PerlinSampler2D:
     @staticmethod
     def s_curve(t):
         return t * t * (3 - 2 * t)
-    
-    def get_value(self, x, y):
-        x_floor = math.floor(x)
-        y_floor = math.floor(y)
+
+    def dot(self, cell_x, cell_y, vx, vy):
+        cell_x = cell_x % self.width
+        cell_y = cell_y % self.height
+        offsets = cell_x + cell_y * self.width
+        return self.gradients[offsets, 0] * vx + self.gradients[offsets, 1] * vy
+
+    def get_value_vectorized(self, x, y):
+        x_floor = np.floor(x).astype(int)
+        y_floor = np.floor(y).astype(int)
         x_frac = x - x_floor
         y_frac = y - y_floor
-        
-        x0 = int(x_floor)
-        y0 = int(y_floor)
-        x1 = x0 + 1 if x0 < self.width - 1 else 0
-        y1 = y0 + 1 if y0 < self.height - 1 else 0
-        
+
+        x0 = x_floor % self.width
+        y0 = y_floor % self.height
+        x1 = (x0 + 1) % self.width
+        y1 = (y0 + 1) % self.height
+
         v00 = self.dot(x0, y0, x_frac, y_frac)
         v10 = self.dot(x1, y0, x_frac - 1, y_frac)
         v01 = self.dot(x0, y1, x_frac, y_frac - 1)
         v11 = self.dot(x1, y1, x_frac - 1, y_frac - 1)
-        
-        sx = self.s_curve(x_frac)
+
+        sx = self.s_curve(x_frac)  # Now correctly references static method
         sy = self.s_curve(y_frac)
-        
-        vx0 = self.lerp(v00, v10, sx)
-        vx1 = self.lerp(v01, v11, sx)
-        return self.lerp(vx0, vx1, sy)
+        return self.lerp(self.lerp(v00, v10, sx), self.lerp(v01, v11, sx), sy)
 
 # Create Perlin Noise Image
-def create_perlin_noise_image(name, width, height, period, randseed, overwrite, correct_aspect):
-    # Delete existing image if overwrite is enabled
-    if overwrite and name in bpy.data.images:
-        old_img = bpy.data.images[name]
-        if old_img.size[0] == width and old_img.size[1] == height:
-            # Reuse existing image
-            img = old_img
-        else:
-            # Remove and create new
-            bpy.data.images.remove(old_img)
-            img = bpy.data.images.new(name, width, height)
-    else:
-        # Create new image
-        img = bpy.data.images.new(name, width, height)
-    
-    # Generate noise pixels
-    sampler = PerlinSampler2D(math.ceil(width / period), math.ceil(height / period), randseed)
-    pixels = [0.0] * (width * height * 4)
-    
-    for j in range(height):
-        for i in range(width):
-            val = sampler.get_value(i / period, j / period)
-            grayscale = (val + 1) / 2
-            idx = (j * width + i) * 4
-            pixels[idx:idx+3] = [grayscale] * 3
-            pixels[idx + 3] = 1.0
-    
-    img.pixels = pixels
-    img.update()
-
-    # Set display aspect ratio
-    if correct_aspect:
-        if width > height:
-            img.display_aspect[0] = height / width
-            img.display_aspect[1] = 1.0
-        else:
-            img.display_aspect[0] = 1.0
-            img.display_aspect[1] = width / height
-    else:
-        img.display_aspect[0] = 1.0
-        img.display_aspect[1] = 1.0
-    
-    return img
-
-def create_turbulence_image(name, width, height, period, randseed, depth, atten, use_color, use_alpha, absolute, overwrite, correct_aspect):
+def create_perlin_noise_image(name, width, height, period, randseed, overwrite, correct_aspect, use_color, use_alpha, absolute):
+    # Image handling
     if overwrite and name in bpy.data.images:
         old_img = bpy.data.images[name]
         if old_img.size[0] == width and old_img.size[1] == height:
@@ -145,82 +100,131 @@ def create_turbulence_image(name, width, height, period, randseed, depth, atten,
     else:
         img = bpy.data.images.new(name, width, height)
 
+    # Channel setup
     num_channels = 3 if use_color else 1
     if use_alpha:
         num_channels += 1
 
-    raster = [0.0] * (width * height * num_channels)
+    # Generate coordinate grid
+    j, i = np.meshgrid(np.arange(width), np.arange(height))
+    raster = np.zeros((height, width, num_channels), dtype=np.float32)
 
+    # Generate noise per channel
     for k in range(num_channels):
-        freq_inv = 1.0
-        local_period_inv = 1.0 / period
-        weight = 0.0
+        channel_seed = randseed + k * 1000  # Unique seed per channel
+        sampler = PerlinSampler2D(
+            math.ceil(width/period),
+            math.ceil(height/period),
+            channel_seed
+        )
         
-        for lvl in range(depth):
-            sampler = PerlinSampler2D(
-                math.ceil(width * local_period_inv),
-                math.ceil(height * local_period_inv),
-                randseed + k + lvl
-            )
-            
-            for j in range(height):
-                for i in range(width):
-                    val = sampler.get_value(i * local_period_inv, j * local_period_inv)
-                    idx = (j * width + i) * num_channels + k
-                    raster[idx] += val * (freq_inv ** atten)
-            
-            weight += freq_inv ** atten
-            freq_inv *= 0.5
-            local_period_inv *= 2
-        
-        if weight > 0:
-            weight_inv = 1.0 / weight
-            for j in range(height):
-                for i in range(width):
-                    idx = (j * width + i) * num_channels + k
-                    raster[idx] *= weight_inv
+        x_coords = j / period
+        y_coords = i / period
+        noise = sampler.get_value_vectorized(x_coords, y_coords)
+        raster[..., k] = noise
 
-    pixels = [0.0] * (width * height * 4)
-    for j in range(height):
-        for i in range(width):
-            idx = (j * width + i) * num_channels
-            if use_color:
-                r = raster[idx]
-                g = raster[idx+1] if num_channels > 1 else raster[idx]
-                b = raster[idx+2] if num_channels > 2 else raster[idx]
-                a = raster[idx+3] if use_alpha else 1.0
-            else:
-                r = g = b = raster[idx]
-                a = raster[idx+1] if use_alpha else 1.0
+    # Post-processing
+    if absolute:
+        raster = np.abs(raster)
+    else:
+        raster = (raster + 1) / 2
 
-            if absolute:
-                r, g, b, a = abs(r), abs(g), abs(b), abs(a)
-            else:
-                r = (r + 1) / 2
-                g = (g + 1) / 2 if use_color else r
-                b = (b + 1) / 2 if use_color else r
-                a = (a + 1) / 2 if use_alpha else 1.0
+    # Create pixel array
+    pixels = np.zeros((height, width, 4), dtype=np.float32)
+    if use_color:
+        pixels[..., :3] = raster[..., :3]
+        if num_channels > 3:
+            pixels[..., 3] = raster[..., 3]
+    else:
+        pixels[..., :3] = raster[..., 0][..., np.newaxis]
+    
+    if not use_alpha:
+        pixels[..., 3] = 1.0
 
-            pixel_idx = (j * width + i) * 4
-            pixels[pixel_idx:pixel_idx+4] = [r, g, b, a]
-
-    img.pixels = pixels
+    # Assign pixels
+    img.pixels.foreach_set(pixels.ravel())
     img.update()
 
-    # Set display aspect ratio
+    # Aspect ratio
     if correct_aspect:
-        if width > height:
-            img.display_aspect[0] = height / width
-            img.display_aspect[1] = 1.0
-        else:
-            img.display_aspect[0] = 1.0
-            img.display_aspect[1] = width / height
+        img.display_aspect = (1.0, height/width) if width > height else (width/height, 1.0)
     else:
-        img.display_aspect[0] = 1.0
-        img.display_aspect[1] = 1.0
+        img.display_aspect = (1.0, 1.0)
     
     return img
 
+def create_turbulence_image(name, width, height, period, randseed, depth, atten, use_color, use_alpha, absolute, overwrite, correct_aspect):
+    # Image handling (same as Perlin)
+    if overwrite and name in bpy.data.images:
+        old_img = bpy.data.images[name]
+        if old_img.size[0] == width and old_img.size[1] == height:
+            img = old_img
+        else:
+            bpy.data.images.remove(old_img)
+            img = bpy.data.images.new(name, width, height)
+    else:
+        img = bpy.data.images.new(name, width, height)
+
+    # Channel setup
+    num_channels = 3 if use_color else 1
+    if use_alpha:
+        num_channels += 1
+
+    # Generate coordinate grid
+    j, i = np.meshgrid(np.arange(width), np.arange(height))
+    raster = np.zeros((height, width, num_channels), dtype=np.float32)
+    weight_total = 0.0
+
+    # Multi-octave generation
+    for lvl in range(depth):
+        freq = 2 ** lvl
+        amplitude = (1.0/freq) ** atten
+        local_period = period / freq
+        
+        for k in range(num_channels):
+            channel_seed = randseed + k * 1000 + lvl * 10000  # Unique per channel/octave
+            sampler = PerlinSampler2D(
+                math.ceil(width / local_period),
+                math.ceil(height / local_period),
+                channel_seed
+            )
+            
+            x_coords = j / local_period
+            y_coords = i / local_period
+            noise = sampler.get_value_vectorized(x_coords, y_coords)
+            raster[..., k] += noise * amplitude
+        
+        weight_total += amplitude
+
+    # Normalize and process
+    raster /= weight_total
+    if absolute:
+        raster = np.abs(raster)
+    else:
+        raster = (raster + 1) / 2
+
+    # Pixel packaging (same as Perlin)
+    pixels = np.zeros((height, width, 4), dtype=np.float32)
+    if use_color:
+        pixels[..., :3] = raster[..., :3]
+        if num_channels > 3:
+            pixels[..., 3] = raster[..., 3]
+    else:
+        pixels[..., :3] = raster[..., 0][..., np.newaxis]
+    
+    if not use_alpha:
+        pixels[..., 3] = 1.0
+
+    img.pixels.foreach_set(pixels.ravel())
+    img.update()
+
+    # Aspect ratio
+    if correct_aspect:
+        img.display_aspect = (1.0, height/width) if width > height else (width/height, 1.0)
+    else:
+        img.display_aspect = (1.0, 1.0)
+    
+    return img
 # Operator to Generate Perlin Noise
 class NOISE_OT_generate_perlin(Operator):
     bl_idname = "noise.generate_perlin"
@@ -306,7 +310,10 @@ class NOISE_OT_generate_perlin(Operator):
                 self.period,
                 self.seed,
                 self.overwrite,
-                self.correct_aspect
+                self.correct_aspect,
+                self.use_color,
+                self.use_alpha,
+                self.absolute
             )
         
         # Set the active image in the Image Editor
@@ -328,6 +335,39 @@ class NOISE_OT_add_to_shader(Operator):
     bl_description = "Connect generated image to active material"
     bl_options = {'REGISTER', 'UNDO'}
 
+    def get_absolute_location(self, node):
+        """Calculate absolute location considering all parent frames/groups"""
+        abs_location = (node.location)
+        parent = node.parent
+        while parent:
+            abs_location += (parent.location)
+            parent = parent.parent
+        return abs_location
+
+    def find_parent_tree(self, node):
+        """Find the root node tree through parent groups"""
+        if node.id_data.users == 1:  # Check if it's a node group
+            for mat in bpy.data.materials:
+                if mat.node_tree:
+                    for n in mat.node_tree.nodes:
+                        if n.type == 'GROUP' and n.node_tree == node.id_data:
+                            return self.find_parent_tree(n)
+        return node.id_data
+
+    def get_active_node(self, context):
+        """Safely get the active node from context"""
+        # Try to get from node editor first
+        for area in context.screen.areas:
+            if area.type == 'NODE_EDITOR':
+                if area.spaces.active and area.spaces.active.node_tree:
+                    return area.spaces.active.node_tree.nodes.active
+        
+        # Fallback to material's active node
+        if context.object and context.object.active_material:
+            return context.object.active_material.node_tree.nodes.active
+        
+        return None
+
     def execute(self, context):
         if not hasattr(context.scene, 'noise_generator_last_image'):
             self.report({'ERROR'}, "No generated image exists")
@@ -337,53 +377,57 @@ class NOISE_OT_add_to_shader(Operator):
         if not image:
             self.report({'ERROR'}, "Image not found")
             return {'CANCELLED'}
-        
-        # Get or create material
-        obj = context.active_object
-        if not obj:
-            self.report({'ERROR'}, "No active object")
+
+        obj = context.object
+        if not obj or not obj.active_material:
+            self.report({'ERROR'}, "No active object or material")
             return {'CANCELLED'}
-        
+
         mat = obj.active_material
-        if not mat:
-            mat = bpy.data.materials.new(name="Procedural Material")
-            obj.active_material = mat
-        
         mat.use_nodes = True
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
-        
-        # NEW: Find Shader Editor space explicitly
-        shader_editor = None
-        for area in context.screen.areas:
-            if area.type == 'NODE_EDITOR':
-                space = area.spaces.active
-                if space.tree_type == 'ShaderNodeTree':
-                    shader_editor = space
-                    break
 
-        # Get active node from Shader Editor if found
-        active_node = None
-        if shader_editor and shader_editor.node_tree:
-            active_node = shader_editor.node_tree.nodes.active
+        # Get the active node safely
+        active_node = self.get_active_node(context)
+        node_tree = mat.node_tree
 
-        # Fallback: Check material's node tree directly
-        if not active_node:
-            active_node = mat.node_tree.nodes.active
+        # If inside a node group, find the parent tree
+        if active_node and active_node.id_data != mat.node_tree:
+            node_tree = self.find_parent_tree(active_node)
 
-        # Create texture node
-        tex_node = nodes.new('ShaderNodeTexImage')
+        # Create texture node in the correct tree
+        tex_node = node_tree.nodes.new('ShaderNodeTexImage')
         tex_node.image = image
-        
-        # Positioning and connection logic
-        if active_node:
-            tex_node.location = (active_node.location[0] - 300, active_node.location[1])
-        else:
-            # Fallback: Connect to Material Output
-            output_node = next((n for n in nodes if isinstance(n, bpy.types.ShaderNodeOutputMaterial)), None)
-            if output_node:
-                tex_node.location = (output_node.location[0] - 300, output_node.location[1])
 
+        # Positioning logic
+        if active_node:
+            # Direct relative positioning
+            if active_node.parent and active_node.parent.type == 'FRAME':
+                frame = active_node.parent
+                tex_node.parent = frame  # Parent first
+                # Use frame-relative coordinates directly
+                tex_node.location = (active_node.location.x - 300, 
+                                    active_node.location.y)
+            else:
+                # Standard positioning
+                tex_node.location = (active_node.location.x - 300,
+                                    active_node.location.y)
+        else:
+            # Fallback positioning
+            output_node = next((n for n in node_tree.nodes 
+                              if isinstance(n, bpy.types.ShaderNodeOutputMaterial)), None)
+            if output_node:
+                tex_node.location = (output_node.location.x - 300, 
+                                   output_node.location.y)
+
+        # Ensure frame expansion
+        if tex_node.parent and tex_node.parent.type == 'FRAME':
+            tex_node.parent.update()
+
+        # Force UI update
+        context.area.tag_redraw()
+        
         return {'FINISHED'}
 
 # Panel in Image Editor

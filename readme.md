@@ -83,6 +83,7 @@ For questions or feedback, please open an issue on the repository or contact the
 
 ## Changelog
 
+- **v1.6**: Generator works 20x faster. `Add to Active Shader` dont ignores frames and group
 - **v1.5**: `Add to Active Shader` button connects image texture to active node in shader editor, added some warnings
 - **v0 - v1.4**: it was born
  

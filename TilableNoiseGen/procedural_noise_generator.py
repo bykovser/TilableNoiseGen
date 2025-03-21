@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Tilable NoiseGen",
     "author": "BykovSer",
-    "version": (1, 4),
+    "version": (1, 5),
     "blender": (4, 3, 0),
     "location": "Image Editor > N Panel > Noise Tools",
     "description": "Generates procedural noise patterns and connects to shaders",
@@ -352,16 +352,38 @@ class NOISE_OT_add_to_shader(Operator):
         mat.use_nodes = True
         nodes = mat.node_tree.nodes
         links = mat.node_tree.links
-        bsdf_node = next((n for n in nodes if isinstance(n, bpy.types.ShaderNodeBsdfPrincipled)), None)
         
-        # Create image texture node
+        # NEW: Find Shader Editor space explicitly
+        shader_editor = None
+        for area in context.screen.areas:
+            if area.type == 'NODE_EDITOR':
+                space = area.spaces.active
+                if space.tree_type == 'ShaderNodeTree':
+                    shader_editor = space
+                    break
+
+        # Get active node from Shader Editor if found
+        active_node = None
+        if shader_editor and shader_editor.node_tree:
+            active_node = shader_editor.node_tree.nodes.active
+
+        # Fallback: Check material's node tree directly
+        if not active_node:
+            active_node = mat.node_tree.nodes.active
+
+        # Create texture node
         tex_node = nodes.new('ShaderNodeTexImage')
         tex_node.image = image
-        if bsdf_node:
-            tex_node.location = (bsdf_node.location[0] - 300, bsdf_node.location[1] - 25)
-        else:
-            tex_node.location = (-300, 300)
         
+        # Positioning and connection logic
+        if active_node:
+            tex_node.location = (active_node.location[0] - 300, active_node.location[1])
+        else:
+            # Fallback: Connect to Material Output
+            output_node = next((n for n in nodes if isinstance(n, bpy.types.ShaderNodeOutputMaterial)), None)
+            if output_node:
+                tex_node.location = (output_node.location[0] - 300, output_node.location[1])
+
         return {'FINISHED'}
 
 # Panel in Image Editor

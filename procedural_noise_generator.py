@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Tilable NoiseGen",
     "author": "BykovSer",
-    "version": (1, 6),
+    "version": (1, 6, 1),
     "blender": (4, 3, 0),
     "location": "Image Editor > N Panel > Noise Tools",
     "description": "Generates procedural noise patterns and connects to shaders",
@@ -147,7 +147,7 @@ def create_perlin_noise_image(name, width, height, period, randseed, overwrite, 
 
     # Aspect ratio
     if correct_aspect:
-        img.display_aspect = (1.0, height/width) if width > height else (width/height, 1.0)
+        img.display_aspect = (1.0, width/height) if width > height else (1, width/height)
     else:
         img.display_aspect = (1.0, 1.0)
     

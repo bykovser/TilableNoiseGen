@@ -19,7 +19,7 @@
 bl_info = {
     "name": "TilableNoiseGen",
     "author": "BykovSer",
-    "version": (1, 6),
+    "version": (1, 6, 1),
     "blender": (4, 3, 0),
     "location": "Image Editor > N Panel > Noise Tools",
     "description": "Generates procedural noise patterns and connects to shaders",

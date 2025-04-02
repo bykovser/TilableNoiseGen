@@ -147,7 +147,7 @@ def create_perlin_noise_image(name, width, height, period, randseed, overwrite, 
 
     # Aspect ratio
     if correct_aspect:
-        img.display_aspect = (width/height, 1.0) if width > height else (width/height, 1.0)
+        img.display_aspect = (1, width/height) if width > height else (height/width, 1)
     else:
         img.display_aspect = (1.0, 1.0)
     
@@ -220,7 +220,7 @@ def create_turbulence_image(name, width, height, period, randseed, depth, atten,
 
     # Aspect ratio
     if correct_aspect:
-        img.display_aspect = (width/height, 1.0) if width > height else (width/height, 1.0)
+        img.display_aspect = (1, width/height) if width > height else (height/width, 1)
     else:
         img.display_aspect = (1.0, 1.0)
     

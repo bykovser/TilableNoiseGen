@@ -48,7 +48,7 @@ Use powers of 2 in **scale** and **image size** to get tilable texture
 
 1. After generating a texture, select an object with a material in the 3D Viewport.
 2. In the `Noise Tools` panel, click the `Add to Active Shader` button.
-3. The generated texture will be connected to the active node.
+3. The generated texture will be added nearby selected node (Or principledBSDF).
 
 ## Parameters
 

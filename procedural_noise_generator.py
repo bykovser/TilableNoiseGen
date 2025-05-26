@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Tilable NoiseGen",
     "author": "BykovSer",
-    "version": (1, 6, 1),
+    "version": (1, 8, 1),
     "blender": (4, 3, 0),
     "location": "Image Editor > N Panel > Noise Tools",
     "description": "Generates procedural noise patterns and connects to shaders",
@@ -87,6 +87,86 @@ class PerlinSampler2D:
         sy = self.s_curve(y_frac)
         return self.lerp(self.lerp(v00, v10, sx), self.lerp(v01, v11, sx), sy)
 
+def update_display_aspect(self, context):
+    img = context.space_data.image
+    if img:
+        # Update the image's display aspect immediately
+        if self.noise_correct_aspect:
+            img.display_aspect = (1, img.size[0]/img.size[1]) if img.size[0] > img.size[1] else (img.size[1]/img.size[0], 1)
+        else:
+            img.display_aspect = (1.0, 1.0)
+        
+        # Also update the stored parameter if it exists
+        if "noise_params" in img:
+            img["noise_params"]["correct_aspect"] = self.noise_correct_aspect
+            
+class NoiseParamsUpdater:
+    print("NoiseParamsUpdater run")
+    _timer = None
+    _current_image = ""
+
+    @classmethod
+    def start_polling(cls):
+        if cls._timer is None:
+            cls._timer = bpy.app.timers.register(cls.poll, persistent=True)
+            print("NoiseParamsUpdater initiated")
+
+    @classmethod
+    def stop_polling(cls):
+        if cls._timer is not None:
+            try:
+                bpy.app.timers.unregister(cls._timer)
+            except ValueError:
+                # Timer was already removed
+                pass
+            cls._timer = None
+        cls._current_image = ""
+        cls._last_area = None
+
+    @classmethod
+    def poll(cls):
+        # Get all image editor spaces in the current window
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'IMAGE_EDITOR':
+                    space = area.spaces.active
+                    #print(f"Found Image Editor space: {space}, image: {space.image.name if space.image else 'None'}")
+                    
+                    if space and space.image:
+                        img = space.image
+                        if img.name != cls._current_image:
+                            cls._current_image = img.name
+                            if "noise_params" in img:
+                                params = img["noise_params"]
+                                scene = bpy.context.scene
+                                
+                                # Update all properties at once
+                                scene.noise_image_name = img.name
+                                scene.noise_width = params["width"]
+                                scene.noise_height = params["height"]
+                                scene.noise_period = params["period"]
+                                scene.noise_seed = params["seed"]
+                                scene.noise_use_color = params["use_color"]
+                                scene.noise_use_alpha = params["use_alpha"]
+                                scene.noise_absolute = params["absolute"]
+                                scene.noise_correct_aspect = params["correct_aspect"]
+                                scene.noise_turbulence = params["turbulence"]
+                                
+                                if params["turbulence"]:
+                                    scene.noise_depth = params["depth"]
+                                    scene.noise_lacunarity = params["lacunarity"]
+                                    scene.noise_atten = params["atten"]
+                                
+                                # Update aspect ratio from params
+                                if "correct_aspect" in img["noise_params"]:
+                                    bpy.context.scene.noise_correct_aspect = img["noise_params"]["correct_aspect"]
+
+                                # Force UI update
+                                area.tag_redraw()
+                                print(f"Updated UI for image: {img.name}")
+            
+        return 0.1  # Run every 0.1 seconds
+
 # Create Perlin Noise Image
 def create_perlin_noise_image(name, width, height, period, randseed, overwrite, correct_aspect, use_color, use_alpha, absolute):
     # Image handling
@@ -150,10 +230,24 @@ def create_perlin_noise_image(name, width, height, period, randseed, overwrite, 
         img.display_aspect = (1, width/height) if width > height else (height/width, 1)
     else:
         img.display_aspect = (1.0, 1.0)
-    
+
+    # Store parameters in metadata
+    img["noise_params"] = {
+        "type": "perlin",
+        "width": width,
+        "height": height,
+        "period": period,
+        "seed": randseed,
+        "use_color": use_color,
+        "use_alpha": use_alpha,
+        "absolute": absolute,
+        "correct_aspect": correct_aspect,
+        "turbulence": False
+    }
+
     return img
 
-def create_turbulence_image(name, width, height, period, randseed, depth, atten, use_color, use_alpha, absolute, overwrite, correct_aspect):
+def create_turbulence_image(name, width, height, period, randseed, depth, lacunarity, atten, use_color, use_alpha, absolute, overwrite, correct_aspect):
     # Image handling (same as Perlin)
     if overwrite and name in bpy.data.images:
         old_img = bpy.data.images[name]
@@ -176,8 +270,8 @@ def create_turbulence_image(name, width, height, period, randseed, depth, atten,
     weight_total = 0.0
 
     # Multi-octave generation
-    for lvl in range(depth):
-        freq = 2 ** lvl
+    for lvl in range(depth+1):
+        freq = lacunarity ** lvl
         amplitude = (1.0/freq) ** atten
         local_period = period / freq
         
@@ -224,8 +318,26 @@ def create_turbulence_image(name, width, height, period, randseed, depth, atten,
     else:
         img.display_aspect = (1.0, 1.0)
     
+    # Store parameters in metadata
+    img["noise_params"] = {
+        "type": "turbulence",
+        "width": width,
+        "height": height,
+        "period": period,
+        "seed": randseed,
+        "depth": depth,
+        "lacunarity": lacunarity,
+        "atten": atten,
+        "use_color": use_color,
+        "use_alpha": use_alpha,
+        "absolute": absolute,
+        "correct_aspect": correct_aspect,
+        "turbulence": True
+    }
+
     return img
 # Operator to Generate Perlin Noise
+
 class NOISE_OT_generate_perlin(Operator):
     bl_idname = "noise.generate_perlin"
     bl_label = "Generate Perlin Noise"
@@ -248,10 +360,17 @@ class NOISE_OT_generate_perlin(Operator):
         max=8,
         description="Number of noise layers"
     )
+    lacunarity: FloatProperty(
+        name="lacunarity",
+        default=2.0,
+        min=1.0,
+        max=64.0,
+        description="Step of each octave"
+    )
     atten: FloatProperty(
         name="Attenuation",
         default=0.5,
-        min=0.1,
+        min=0.01,
         max=1.0,
         description="Amplitude reduction per layer"
     )
@@ -295,6 +414,7 @@ class NOISE_OT_generate_perlin(Operator):
                 self.period,
                 self.seed,
                 self.depth,
+                self.lacunarity,
                 self.atten,
                 self.use_color,
                 self.use_alpha,
@@ -438,9 +558,15 @@ class NOISE_PT_main_panel(Panel):
     bl_region_type = 'UI'
     bl_category = "Noise Tools"
 
+
+    @classmethod
+    def poll(cls, context):
+        return context.space_data and context.space_data.image
+
     def draw(self, context):
         layout = self.layout
         scene = context.scene
+        img = context.space_data.image
         
         # Image Name and Overwrite
         box = layout.box()
@@ -465,6 +591,7 @@ class NOISE_PT_main_panel(Panel):
         col = box.column(align=True)
         col.prop(scene, "noise_turbulence", text = "Use depth")
         col.prop(scene, "noise_depth", text = "Depth details")
+        col.prop(scene, "noise_lacunarity", text = "lacunarity")
         col.prop(scene, "noise_atten", text = "Mix details")
 
 
@@ -489,6 +616,7 @@ class NOISE_PT_main_panel(Panel):
 
         op.turbulence = scene.noise_turbulence
         op.depth = scene.noise_depth
+        op.lacunarity = scene.noise_lacunarity
         op.atten = scene.noise_atten
 
         op.use_color = scene.noise_use_color
@@ -500,6 +628,7 @@ class NOISE_PT_main_panel(Panel):
 
 # Register and Unregister
 def register():
+    NoiseParamsUpdater.stop_polling()
     bpy.utils.register_class(NOISE_OT_generate_perlin)
     bpy.utils.register_class(NOISE_OT_add_to_shader)
     bpy.utils.register_class(NOISE_PT_main_panel)
@@ -519,14 +648,22 @@ def register():
     bpy.types.Scene.noise_seed = IntProperty(default=1, min=0)
     bpy.types.Scene.noise_generator_last_image = StringProperty()
     bpy.types.Scene.noise_depth = IntProperty(default=4, min=1, max=8)
-    bpy.types.Scene.noise_atten = FloatProperty(default=0.5, min=0.1, max=1.0)
+    bpy.types.Scene.noise_lacunarity = FloatProperty(default=2.0, min=1.0, max=64.0)
+    bpy.types.Scene.noise_atten = FloatProperty(default=0.5, min=0.01, max=1.0)
     bpy.types.Scene.noise_use_color = BoolProperty(default=False)
     bpy.types.Scene.noise_use_alpha = BoolProperty(default=False)
     bpy.types.Scene.noise_absolute = BoolProperty(default=False)
     bpy.types.Scene.noise_turbulence = BoolProperty(default=False)
-    bpy.types.Scene.noise_correct_aspect = BoolProperty(default=True)
+    bpy.types.Scene.noise_correct_aspect = BoolProperty(
+        default=True,
+        update=update_display_aspect,
+        description="Adjust display aspect ratio based on image dimensions"
+    )
+    bpy.types.Scene.noise_active_image = StringProperty()
+    NoiseParamsUpdater.start_polling()
 
 def unregister():
+    NoiseParamsUpdater.stop_polling()
     bpy.utils.unregister_class(NOISE_OT_generate_perlin)
     bpy.utils.unregister_class(NOISE_OT_add_to_shader)
     bpy.utils.unregister_class(NOISE_PT_main_panel)
@@ -540,12 +677,15 @@ def unregister():
     del bpy.types.Scene.noise_seed
     del bpy.types.Scene.noise_generator_last_image
     del bpy.types.Scene.noise_depth    
-    del bpy.types.Scene.noise_attenmin
+    del bpy.types.Scene.noise_lacunarity
+    del bpy.types.Scene.noise_atten
     del bpy.types.Scene.noise_use_color
     del bpy.types.Scene.noise_use_alpha
     del bpy.types.Scene.noise_absolute
     del bpy.types.Scene.noise_turbulence
     del bpy.types.Scene.noise_correct_aspect
+    
+    del bpy.types.Scene.noise_active_image
 
 
 if __name__ == "__main__":

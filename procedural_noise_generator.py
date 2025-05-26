@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Tilable NoiseGen",
     "author": "BykovSer",
-    "version": (1, 8, 1),
+    "version": (1, 8, 2),
     "blender": (4, 3, 0),
     "location": "Image Editor > N Panel > Noise Tools",
     "description": "Generates procedural noise patterns and connects to shaders",
@@ -406,6 +406,9 @@ class NOISE_OT_generate_perlin(Operator):
     seed: IntProperty(default=1, min=0)
 
     def execute(self, context):
+        if not self.overwrite and self.image_name in bpy.data.images:
+            self.report({'ERROR'}, "Image exists! Check Overwrite")
+            return {'CANCELLED'}
         if self.turbulence:
             image = create_turbulence_image(
                 self.image_name,
@@ -561,7 +564,7 @@ class NOISE_PT_main_panel(Panel):
 
     @classmethod
     def poll(cls, context):
-        return context.space_data and context.space_data.image
+        return context.space_data and context.space_data.type == 'IMAGE_EDITOR'
 
     def draw(self, context):
         layout = self.layout
@@ -571,7 +574,12 @@ class NOISE_PT_main_panel(Panel):
         # Image Name and Overwrite
         box = layout.box()
         box.prop(scene, "noise_image_name", text="Name")
-        box.prop(scene, "noise_overwrite", toggle=True)
+        if img:  # Only enable overwrite if an image exists
+            box.prop(scene, "noise_overwrite", toggle=True)
+        else:
+            row = box.row()
+            #row.enabled = False  # Disable the checkbox
+            row.prop(scene, "noise_overwrite", toggle=True)
         
         #Image settings
         box = layout.box()
@@ -637,6 +645,7 @@ def register():
     bpy.types.Scene.noise_image_name = StringProperty(
         name="Image Name",
         default="PerlinNoise",
+        update=lambda s,c: setattr(c.scene, 'noise_name_exists', s.image_name in bpy.data.images)
     )
     bpy.types.Scene.noise_overwrite = BoolProperty(
         name="Overwrite",
@@ -660,6 +669,7 @@ def register():
         description="Adjust display aspect ratio based on image dimensions"
     )
     bpy.types.Scene.noise_active_image = StringProperty()
+    bpy.types.Scene.noise_name_exists = BoolProperty(default=False)
     NoiseParamsUpdater.start_polling()
 
 def unregister():
@@ -686,6 +696,7 @@ def unregister():
     del bpy.types.Scene.noise_correct_aspect
     
     del bpy.types.Scene.noise_active_image
+    del bpy.types.Scene.noise_name_exists
 
 
 if __name__ == "__main__":

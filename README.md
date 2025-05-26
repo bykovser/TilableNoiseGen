@@ -83,7 +83,7 @@ For questions or feedback, please open an issue on the repository or contact the
 
 ## Changelog
 
-- **v1.8.1**: now each generated image stores its parameters, iterating became easier. "display as 1x1" checkbox is now realtime
+- **v1.8.2**: now each generated image stores its parameters, iterating became easier. "display as 1x1" checkbox is now realtime
 - **v1.6.1**: fixed Aspect ratio equalizer
 - **v1.6**: Generator works 20x faster. `Add to Active Shader` dont ignores frames and group
 - **v1.5**: `Add to Active Shader` button connects image texture to active node in shader editor, added some warnings

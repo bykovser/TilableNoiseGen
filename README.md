@@ -16,9 +16,10 @@ Use powers of 2 in **scale** and **image size** to get tilable texture
 
 ## Installation
 
-1. Download the `.py` file containing the script.
-2. Open Blender and go to `Edit > Preferences > Add-ons`.
-3. Click `Install...` and select the downloaded `.py` file.
+1. Download the add-on
+2.0. Just drag'n'drop the downloaded `.zip` into blender
+2. Open Blender and go to `Edit > Preferences > Add-ons`. 
+3. Click `Install...` and select the downloaded `.zip` file.
 4. Enable the add-on by checking the box next to its name.
 
 ## Usage
